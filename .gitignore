@@ -63,3 +63,6 @@ target/
 
 #Sensitive things like credentials
 Sensitive/
+
+#Logs
+Log/

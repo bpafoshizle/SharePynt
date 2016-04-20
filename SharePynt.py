@@ -1,13 +1,27 @@
 class SharePynt:
 	""" A class to make working with Microsoft SharePoint from Python Easier """
 	
-	def __init__(self, server, site, authType):
+	def __init__(self, server, site, authType, logLevel=0):
 		import requests
+		import logging
 		from SharePyntUrlBuilder import SharePyntUrlBuilder
 		self.urlBuilder = SharePyntUrlBuilder(server, site)
 		self.authType = authType
 		self.session = requests.Session()
 		self.session.auth = self.getAuth()
+		
+		# Logging
+		self.logger = logging.getLogger(__name__)
+		self.logger.setLevel(logLevel)
+		fh = logging.FileHandler('Log/debug.log')
+		fh.setLevel(logging.DEBUG)
+		ch = logging.StreamHandler()
+		ch.setLevel(logging.DEBUG)
+		formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+		fh.setFormatter(formatter)
+		ch.setFormatter(formatter)
+		self.logger.addHandler(fh)
+		self.logger.addHandler(ch)
 				
 	def UploadFile(self, library, file, localFileName):
 		import sys
@@ -21,13 +35,18 @@ class SharePynt:
 			
 		# Upload
 		url = self.urlBuilder.buildUploadFileUrl(library, file)
-		fileData = None
 		with open(localFileName, 'rb') as f:
-			fileData = f.read()
-		#print("Read %d bytes of file %s" % (sys.getsizeof(fileData), localFileName))
-		r = self.session.put(url, data = {'body':fileData}, headers=headers)
-		#print("Uploaded")
-		print(r)
+			r = self.session.put(url, data = f, headers=headers)
+			# Make sure upload is successful
+			if r.status_code != 204:
+				from SharePyntError import UploadError
+				raise UploadError("Upload unsuccessful with return code %s" % (r.status_code))
+		
+		self.logger.debug("Uploaded. Status code %s.", r.status_code)
+			#fileData = f.read()
+		#self.logger.debug("Read %d bytes of file %s", sys.getsizeof(fileData), localFileName)
+		
+		
 		
 		#Checkin
 		self.CheckInFile(library, file, self.ctxResponse)
@@ -42,10 +61,12 @@ class SharePynt:
 		headers = {"X-RequestDigest":self.formDigestValue}	
 		url = self.urlBuilder.buildCheckOutFileUrl(library, file)
 		r = self.session.post(url, headers=headers)
-		
-		#TODO: Make sure checkout is successful
-		#print("Checked out")
-		#print(r)
+					
+		# Make sure checkout is successful
+		if r.status_code != 200:
+			from SharePyntError import CheckoutError
+			raise CheckoutError("Checkout unsuccessful with return code %s" % (r.status_code))
+		self.logger.debug("Checked out. Status code %s", r.status_code)
 		
 
 	def CheckInFile(self, library, file, context=None):
@@ -57,13 +78,15 @@ class SharePynt:
 		url = self.urlBuilder.buildCheckInFileUrl(library, file, comment="Checked in from SharePynt Python Library.")
 		r = self.session.post(url, headers=headers)
 		
-		#TODO: Make sure checkin is successful
-		#print("Checked in")
-		#print(r)
+		# Make sure checkin is successful
+		if r.status_code != 200:
+			from SharePyntError import CheckinError
+			raise CheckinError("Checkin unsuccessful with return code %s" % (r.status_code))
+		self.logger.debug("Checked in. Status code %s", r.status_code)
 	
 	def DownloadFile(self, library, file, localFileName):
 		url = self.urlBuilder.buildDownloadFileUrl(library, file)
-		print("Downloading %s" % url)
+		self.logger.debug("Downloading %s" , url)
 		r = self.session.get(url,stream=True)
 		with open(localFileName, 'wb+') as f:
 			for chunk in r.iter_content(chunk_size=1024): 
@@ -100,7 +123,14 @@ class SharePynt:
 		self.ctxResponse = self.session.post(url)
 		from bs4 import BeautifulSoup
 		doc = BeautifulSoup(self.ctxResponse.text)
-		self.formDigestValue = doc.find("d:formdigestvalue").string
+		
+		if doc.find("d:formdigestvalue") == None:
+			from SharePyntError import DigestAquisitionError
+			raise DigestAquisitionError("Unable to obtain form digest information.")
+		else:
+			self.formDigestValue = doc.find("d:formdigestvalue").string
+			
+		self.logger.debug("Digest aquired: %s", self.formDigestValue)
 		
 		
 
@@ -112,8 +142,7 @@ if __name__ == "__main__":
 	parser.add_argument('authType')
 	args = parser.parse_args()
 	
-	sp = SharePynt(args.server,args.site,args.authType)
-	print("User: %s, Pass: %s" % (sp.credDict["u"], sp.credDict["p"]))
+	sp = SharePynt(args.server,args.site,args.authType,10)
 	#sp.DownloadFile("Supply Chain Order Tracking", "CORE - SC - STO.xlsx", "CORE - SC - STO.xlsx")
 	sp.UploadFile("Supply Chain Order Tracking", "CORE - SC - STO.xlsx", "C:\\Users\\Millerbarr\\Documents\\SAP\\HANA SAP to SIM Compare\\Daily Reports\\AutoRefresh\\Reports\\CORE - SC - STO.xlsx")
 	
