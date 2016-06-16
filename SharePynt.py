@@ -123,10 +123,9 @@ class SharePynt:
 		self.ctxResponse = self.session.post(url)
 		from bs4 import BeautifulSoup
 		doc = BeautifulSoup(self.ctxResponse.text)
-		
 		if doc.find("d:formdigestvalue") == None:
 			from SharePyntError import DigestAquisitionError
-			raise DigestAquisitionError("Unable to obtain form digest information.")
+			raise DigestAquisitionError("Unable to obtain form digest information. Received response code: %s" % self.ctxResponse.status_code)
 		else:
 			self.formDigestValue = doc.find("d:formdigestvalue").string
 			
